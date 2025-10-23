@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>FB Login Callback</title></head>
+<body>
+  <div style="font-family: Arial; margin:40px;">
+    <h2>✅ Facebook Login Successful</h2>
+    <p>You can close this window and return to the app.</p>
+  </div>
+
+  <script>
+    // Capture access token from URL hash
+    const hash = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    const token = params.get("access_token");
+
+    if (token) {
+      // Save token to server
+      fetch(`/save-token?token=${token}`).catch(()=>{});
+
+      // Notify opener window
+      if (window.opener) {
+        window.opener.postMessage({ fb_token: token }, "*");
+        setTimeout(() => window.close(), 1000);
+      }
+    }
+  </script>
+</body>
+</html>

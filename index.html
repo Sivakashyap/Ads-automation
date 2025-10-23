@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crew AI — Facebook Ads Demo</title>
+<style>
+body { font-family: Arial; padding: 30px; background: #f7f8fa; }
+h1 { color: #1877f2; }
+button { background-color: #1877f2; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 16px; }
+button:disabled { background-color: #999; }
+textarea { width: 100%; height: 80px; margin-top: 10px; font-size: 15px; padding: 10px; }
+pre { background: #eee; padding: 15px; border-radius: 8px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin-top: 10px; background: #fff; }
+th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+th { background: #f0f2f5; }
+</style>
+</head>
+<body>
+
+<h1>Crew AI — Facebook Ads Demo</h1>
+
+<button id="connectBtn" onclick="connectFacebook()">Connect with Facebook</button>
+<p id="status">Not connected</p>
+
+<h3>Your Pages</h3>
+<div id="pages">(none)</div>
+
+<h3>Your Ad Accounts</h3>
+<div id="adAccounts">(none)</div>
+
+<h3>Crew AI Automation</h3>
+<p>Enter a short brief for Campaign creation:</p>
+<textarea id="brief" placeholder="Example: Promote summer sale, ₹100/day, India"></textarea><br>
+<button onclick="createCampaign()">Create Campaign (Crew AI)</button>
+
+<h3>Ads Data</h3>
+<p>View your most recent ads and performance stats:</p>
+<button onclick="fetchAds()">Fetch Ads Data</button>
+<div id="ads">(none)</div>
+
+
+<h3>Lead Ads (Optional — leads_retrieval)</h3>
+<p>Fetch leads from your connected Facebook Page (if any):</p>
+<button onclick="fetchLeads()">Fetch Leads</button>
+<div id="leads">(none)</div>
+
+<h3>Raw logs / API response</h3>
+<pre id="logs"></pre>
+
+<script>
+const appId = "1185930630032223"; // FB App ID
+const redirectUri = "http://localhost:3000/facebook-callback.html";
+const scope = "ads_management,ads_read,pages_show_list,pages_manage_ads,business_management,pages_read_engagement,leads_retrieval";
+
+function connectFacebook() {
+  const oauth = `https://www.facebook.com/v20.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&response_type=token`;
+  window.open(oauth, "_blank", "width=600,height=700");
+}
+
+// Listen for token from callback page
+window.addEventListener("message", (event) => {
+  if (event.data.fb_token) {
+    localStorage.setItem("fb_token", event.data.fb_token);
+    document.getElementById("connectBtn").innerText = "Connected ✅";
+    document.getElementById("connectBtn").disabled = true;
+    document.getElementById("status").innerText = "Connected to Facebook";
+    loadData();
+  }
+});
+
+// Load Pages & Ad Accounts
+async function loadData() {
+  const logs = document.getElementById("logs");
+  logs.textContent = "Fetching data from Facebook...";
+
+  const [pagesRes, adRes] = await Promise.all([
+    fetch("/api/pages"),
+    fetch("/api/adaccounts")
+  ]);
+
+  const pages = await pagesRes.json();
+  const ads = await adRes.json();
+
+  document.getElementById("pages").innerText =
+    pages.data?.map(p => p.name).join(", ") || "(none)";
+
+  document.getElementById("adAccounts").innerText =
+    ads.data?.map(a => a.account_id).join(", ") || "(none)";
+
+  logs.textContent = JSON.stringify({ pages, ads }, null, 2);
+}
+
+// Create Campaign
+async function createCampaign() {
+  const brief = document.getElementById("brief").value.trim();
+  if (!brief) { alert("Please enter a campaign brief!"); return; }
+
+  const res = await fetch("/create-campaign", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ brief })
+  });
+  const data = await res.json();
+  document.getElementById("logs").textContent = JSON.stringify(data, null, 2);
+}
+
+// ✅ Fetch Ads Insights (ads_read)
+async function fetchAdInsights() {
+  const div = document.getElementById("adsInsights");
+  div.textContent = "Fetching ad insights...";
+  
+  const res = await fetch("/api/ads-insights");
+  const data = await res.json();
+  document.getElementById("logs").textContent = JSON.stringify(data, null, 2);
+
+  if (!data.insights || data.insights.length === 0) {
+    div.textContent = "(no ad insights found or permission not granted)";
+    return;
+  }
+
+  // Render insights in a table
+  let table = `<table>
+    <tr><th>Campaign</th><th>Ad Name</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Spend</th></tr>`;
+  data.insights.forEach(i => {
+    table += `<tr>
+      <td>${i.campaign_name || '-'}</td>
+      <td>${i.ad_name || '-'}</td>
+      <td>${i.impressions || 0}</td>
+      <td>${i.clicks || 0}</td>
+      <td>${i.ctr || '-'}</td>
+      <td>${i.spend || 0}</td>
+    </tr>`;
+  });
+  table += "</table>";
+  div.innerHTML = table;
+}
+
+// Fetch Leads
+async function fetchLeads() {
+  const leadsDiv = document.getElementById("leads");
+  leadsDiv.textContent = "Fetching leads...";
+  const res = await fetch("/api/leads");
+  const data = await res.json();
+  leadsDiv.textContent = data.allLeads?.length
+    ? JSON.stringify(data.allLeads, null, 2)
+    : "(no leads found or no permission)";
+  document.getElementById("logs").textContent = JSON.stringify(data, null, 2);
+}
+// Fetch Ads Data
+async function fetchAds() {
+  const adsDiv = document.getElementById("ads");
+  adsDiv.textContent = "Fetching ads data...";
+  const res = await fetch("/api/ads");
+  const data = await res.json();
+
+  if (data.data?.length) {
+    // Build table
+    let table = `<table border="1" cellpadding="6" style="border-collapse: collapse; margin-top: 10px;">
+      <tr><th>Campaign</th><th>Ad Name</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Spend</th></tr>`;
+    for (const ad of data.data) {
+      table += `<tr>
+        <td>${ad.campaign}</td>
+        <td>${ad.ad_name}</td>
+        <td>${ad.impressions}</td>
+        <td>${ad.clicks}</td>
+        <td>${ad.ctr}</td>
+        <td>${ad.spend}</td>
+      </tr>`;
+    }
+    table += `</table>`;
+    adsDiv.innerHTML = table;
+  } else {
+    adsDiv.textContent = "(no ads found or no permission)";
+  }
+
+  document.getElementById("logs").textContent = JSON.stringify(data, null, 2);
+}
+
+</script>
+
+</body>
+</html>
